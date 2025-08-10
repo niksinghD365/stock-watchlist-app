@@ -1,4 +1,5 @@
 requests
+flask
 alpha_vantage
 nsetools
 gunicorn
