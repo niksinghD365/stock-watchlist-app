@@ -15,12 +15,12 @@ def get_stock_price(symbol):
     """
     try:
         # NSE expects lowercase stock codes (e.g., 'reliance', 'tcs')
-        data = nse.get_quote(symbol.lower(), as_json=True)
+        data = nse.get_quote(symbol.lower())
 
         if not data or 'lastPrice' not in data:
             return None, None, None
 
-        # Remove comma from price string (e.g., '2,345.50' → 2345.50)
+        # Remove commas from price string and convert to float
         price = float(data['lastPrice'].replace(',', ''))
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return price, timestamp, "NSE India"
