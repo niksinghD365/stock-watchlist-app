@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stock Watchlist</title>
+</head>
+<body>
+    <h1>📈 Stock Watchlist</h1>
+    <form method="POST">
+        <input type="text" name="symbol" placeholder="Enter NSE Symbol" required>
+        <button type="submit">Add Stock</button>
+    </form>
+
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>Symbol</th>
+            <th>Added Price</th>
+            <th>Added Time</th>
+            <th>Current Price</th>
+            <th>Change</th>
+            <th>% Change</th>
+            <th>Source</th>
+            <th>Remove</th>
+        </tr>
+        {% for stock in watchlist %}
+        <tr>
+            <td>{{ stock.symbol }}</td>
+            <td>{{ stock.added_price }}</td>
+            <td>{{ stock.added_time }}</td>
+            <td>{{ stock.current_price }}</td>
+            <td>{{ stock.change }}</td>
+            <td>{{ stock.change_pct }}%</td>
+            <td>{{ stock.source }}</td>
+            <td><a href="/remove/{{ stock.symbol }}">❌</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
