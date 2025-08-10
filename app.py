@@ -15,8 +15,10 @@ def fetch_alpha(symbol):
     """Primary source: AlphaVantage"""
     try:
         url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHA_API_KEY}"
+        print("URL:", url)
         r = requests.get(url)
         data = r.json()
+        print("Fetched data:", data)
         if "Global Quote" in data and "05. price" in data["Global Quote"]:
             price = float(data["Global Quote"]["05. price"])
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
