@@ -1,38 +1,204 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Stock Watchlist</title>
-</head>
-<body>
-    <h1>📈 Stock Watchlist</h1>
-    <form method="POST">
-        <input type="text" name="symbol" placeholder="Enter NSE Symbol" required>
-        <button type="submit">Add Stock</button>
-    </form>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Microcap Watchlist — Dashboard</title>
 
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>Symbol</th>
-            <th>Added Price</th>
-            <th>Added Time</th>
-            <th>Current Price</th>
-            <th>Change</th>
-            <th>% Change</th>
-            <th>Source</th>
-            <th>Remove</th>
-        </tr>
-        {% for stock in watchlist %}
-        <tr>
-            <td>{{ stock.symbol }}</td>
-            <td>{{ stock.added_price }}</td>
-            <td>{{ stock.added_time }}</td>
-            <td>{{ stock.current_price }}</td>
-            <td>{{ stock.change }}</td>
-            <td>{{ stock.change_pct }}%</td>
-            <td>{{ stock.source }}</td>
-            <td><a href="/remove/{{ stock.symbol }}">❌</a></td>
-        </tr>
-        {% endfor %}
-    </table>
-</body>
+    <!-- Tailwind via CDN (plays nice for quick prototypes) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      /* small custom tweaks */
+      .glass {
+        background: rgba(255,255,255,0.6);
+        backdrop-filter: blur(6px);
+      }
+      .glass-dark {
+        background: rgba(17,24,39,0.45);
+        backdrop-filter: blur(6px);
+      }
+    </style>
+  </head>
+
+  <body class="bg-slate-50 text-slate-800 min-h-screen">
+    <div class="max-w-7xl mx-auto p-4">
+
+      <!-- Top bar -->
+      <header class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+          <div class="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold">MC</div>
+          <div>
+            <h1 class="text-xl font-semibold">Microcap Watchlist</h1>
+            <p class="text-sm text-slate-500">AlphaVantage → NSE fallback • SQLite persistent</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button id="refreshBtn" class="px-3 py-2 bg-white border rounded shadow-sm text-sm hover:bg-slate-50">Refresh</button>
+          <a href="#" class="text-sm text-slate-500">Docs</a>
+        </div>
+      </header>
+
+      <!-- Main layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left column: Add box + watchlist -->
+        <section class="lg:col-span-1">
+          <div class="glass rounded-lg p-4 shadow">
+            <form id="addForm" method="POST" class="flex gap-2">
+              <input name="symbol" id="symbolInput" placeholder="Add symbol (RELIANCE.BSE or RELIANCE)" required
+                     class="flex-1 px-3 py-2 rounded border focus:outline-none focus:ring" />
+              <button type="submit" class="px-4 py-2 rounded bg-indigo-600 text-white">Add</button>
+            </form>
+
+            <div class="mt-4">
+              <h3 class="text-sm font-medium text-slate-700">Watchlist</h3>
+              <div id="watchlistContainer" class="mt-3 space-y-3">
+                {% for s in watchlist %}
+                  <div class="flex items-center justify-between gap-3 p-3 rounded border bg-white">
+                    <div>
+                      <div class="flex items-baseline gap-2">
+                        <span class="font-medium text-slate-800">{{ s.symbol }}</span>
+                        {% if s.source %}
+                          <span class="text-xs px-2 py-0.5 rounded text-slate-600 bg-slate-100">{{ s.source }}</span>
+                        {% endif %}
+                      </div>
+                      <div class="text-xs text-slate-500">
+                        Added {{ s.added_date }} • Initial ₹{{ s.initial_price }}
+                      </div>
+                    </div>
+
+                    <div class="text-right">
+                      <div class="text-sm font-semibold">
+                        {% if s.current_price is not none %}₹{{ s.current_price }}{% else %}-{% endif %}
+                      </div>
+                      <div class="text-xs">
+                        {% if s.change is not none %}
+                          <span class="{{ 'text-emerald-600' if s.change >= 0 else 'text-rose-600' }}">
+                            {{ '+' if s.change >=0 else ''}}{{ s.change }} ({{ s.pct }}%)
+                          </span>
+                        {% else %}
+                          <span class="text-slate-400">—</span>
+                        {% endif %}
+                      </div>
+                      <div class="mt-2">
+                        <a href="/remove/{{ s.symbol }}" class="text-xs text-rose-600 hover:underline">Remove</a>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+                {% if not watchlist %}
+                  <div class="text-sm text-slate-500 p-3">No stocks yet — add one to get started.</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Alerts / Tips -->
+          <div class="mt-4 glass-dark rounded-lg p-3 text-white">
+            <h4 class="text-sm font-semibold">Tips</h4>
+            <ul class="mt-2 text-sm space-y-1">
+              <li>Use <code>SYMBOL.BSE</code> or plain <code>SYMBOL</code> for NSE fallback.</li>
+              <li>Set <code>ALPHA_VANTAGE_API_KEY</code> in Render env for better results.</li>
+              <li>Click Refresh to re-query live prices.</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- Center column: Key metrics / small report -->
+        <section class="lg:col-span-2">
+          <div class="glass rounded-lg p-4 shadow">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <h2 class="text-lg font-semibold">Daily Summary</h2>
+                <p class="text-sm text-slate-500">Latest prices and alerts</p>
+              </div>
+              <div class="text-sm text-slate-500">Updated: <span id="lastUpdated">—</span></div>
+            </div>
+
+            <!-- Price table (markdown-like) -->
+            <div class="overflow-x-auto">
+              <table class="min-w-full table-auto">
+                <thead>
+                  <tr class="text-left text-slate-500 text-sm">
+                    <th class="px-3 py-2">Stock</th>
+                    <th class="px-3 py-2">Price (₹)</th>
+                    <th class="px-3 py-2">1D Change</th>
+                    <th class="px-3 py-2">Since Added</th>
+                    <th class="px-3 py-2">Source</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y">
+                  {% for s in watchlist %}
+                  <tr>
+                    <td class="px-3 py-2">
+                      <div class="font-medium">{{ s.symbol }}</div>
+                      <div class="text-xs text-slate-500">Added {{ s.added_date }}</div>
+                    </td>
+                    <td class="px-3 py-2">
+                      {% if s.current_price is not none %}₹{{ s.current_price }}{% else %}-{% endif %}
+                    </td>
+                    <td class="px-3 py-2">
+                      {% if s.change is not none %}
+                        <span class="{{ 'text-emerald-600' if s.change >= 0 else 'text-rose-600' }}">
+                          {{ '+' if s.change >=0 else ''}}{{ s.change }}
+                        </span>
+                      {% else %}-{% endif %}
+                    </td>
+                    <td class="px-3 py-2">
+                      {% if s.pct is not none %}
+                        {{ s.pct }}%
+                      {% else %}-{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-slate-500">{{ s.source or '-' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- News & alerts area -->
+            <div class="mt-6">
+              <h3 class="text-sm font-medium">Alerts</h3>
+              <div id="alerts" class="mt-2 text-sm text-slate-600">
+                <!-- server-side alerts would be injected into the page or left blank -->
+                {% if watchlist %}
+                  {% for s in watchlist %}
+                    {% if s.pct is not none and (s.pct|float) > 5 %}
+                      <div class="p-2 mb-1 rounded bg-rose-50 text-rose-700">⚠️ {{ s.symbol }} moved {{ s.pct }}%</div>
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <div class="text-slate-400">No alerts today.</div>
+                {% endif %}
+              </div>
+            </div>
+
+          </div>
+        </section>
+      </div>
+
+      <footer class="mt-8 text-xs text-slate-500">Built for microcap tracking • Data: AlphaVantage / NSE</footer>
+    </div>
+
+    <!-- small client script to hook refresh button -->
+    <script>
+      document.getElementById('refreshBtn')?.addEventListener('click', function (e) {
+        e.preventDefault();
+        // submit /refresh POST by creating a form
+        const f = document.createElement('form');
+        f.method = 'POST';
+        f.action = '/refresh';
+        document.body.appendChild(f);
+        f.submit();
+      });
+
+      // auto-set lastUpdated from timestamps of first watchlist item if present
+      (function() {
+        const ts = "{{ watchlist[0].timestamp if watchlist and watchlist[0].timestamp else '' }}";
+        if (ts) document.getElementById('lastUpdated').textContent = ts;
+      })();
+    </script>
+  </body>
 </html>
