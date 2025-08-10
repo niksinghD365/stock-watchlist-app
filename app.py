@@ -7,7 +7,7 @@ app = Flask(__name__)
 # ---------------------------
 # Config
 # ---------------------------
-ALPHA_API_KEY = "demo"  # Replace with your AlphaVantage API key
+ALPHA_API_KEY = "KXDPZY9DBDUNYVNU"  # Replace with your AlphaVantage API key
 watchlist = {}  # {symbol: {"added_price": float, "added_time": str}}
 # ---------------------------
 
