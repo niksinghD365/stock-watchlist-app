@@ -1,89 +1,116 @@
-import os
-import requests
 from flask import Flask, render_template, request, redirect
-from nsetools import Nse
+import requests
 from datetime import datetime
+import os
 
 app = Flask(__name__)
-nse = Nse()
 
+# Your AlphaVantage API key from environment variable (set in Render or locally)
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
+# In-memory watchlist dictionary: symbol -> info
 watchlist = {}
 
 def get_stock_price_alpha(symbol):
+    """Fetch price from AlphaVantage API."""
+    if not ALPHAVANTAGE_API_KEY:
+        return None, None, None
+
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHAVANTAGE_API_KEY}"
     try:
-        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHAVANTAGE_API_KEY}"
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        price_str = data.get("Global Quote", {}).get("05. price")
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        quote = data.get("Global Quote") or {}
+        price_str = quote.get("05. price")
         if price_str:
-            return float(price_str), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "AlphaVantage"
+            price = float(price_str)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return price, timestamp, "AlphaVantage"
     except Exception as e:
-        print(f"AlphaVantage error for {symbol}: {e}")
+        print(f"Error fetching {symbol} from AlphaVantage: {e}")
     return None, None, None
 
-def get_stock_price(symbol):
-    # Try NSE first
+def get_nse_quote(symbol):
+    """Fetch price from NSE using raw requests with proper headers and session."""
+    url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol.upper()}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": f"https://www.nseindia.com/get-quotes/equity?symbol={symbol.upper()}",
+    }
     try:
-        data = nse.get_quote(symbol.lower())
-        if data and "lastPrice" in data:
-            price = float(data["lastPrice"].replace(',', ''))
+        session = requests.Session()
+        # Visit homepage first to set cookies
+        session.get("https://www.nseindia.com", headers=headers, timeout=5)
+        resp = session.get(url, headers=headers, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        last_price_str = data.get("priceInfo", {}).get("lastPrice")
+        if last_price_str:
+            price = float(last_price_str.replace(',', ''))
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return price, timestamp, "NSE India"
     except Exception as e:
         print(f"Error fetching {symbol} from NSE: {e}")
+    return None, None, None
+
+def get_stock_price(symbol):
+    """Try NSE first, then fallback to AlphaVantage."""
+    price, timestamp, source = get_nse_quote(symbol)
+    if price:
+        return price, timestamp, source
 
     # Fallback to AlphaVantage
-    if ALPHAVANTAGE_API_KEY:
-        return get_stock_price_alpha(symbol)
-    else:
-        print("No AlphaVantage API key set for fallback.")
+    price, timestamp, source = get_stock_price_alpha(symbol)
+    if price:
+        return price, timestamp, source
 
     return None, None, None
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        symbol = request.form["symbol"].upper()
-        # We try with symbol as-is for NSE (lowercase inside get_stock_price)
-        price, timestamp, source = get_stock_price(symbol)
-        if price:
-            watchlist[symbol] = {
-                "added_price": price,
-                "added_time": timestamp,
-                "source": source
-            }
-        else:
-            print(f"Failed to add {symbol}, no price data.")
+        symbol = request.form.get("symbol", "").strip().upper()
+        if symbol:
+            # Try NSE with symbol directly, fallback to AlphaVantage inside get_stock_price()
+            price, timestamp, source = get_stock_price(symbol)
+            if price:
+                watchlist[symbol] = {
+                    "added_price": price,
+                    "added_time": timestamp,
+                    "source": source
+                }
+            else:
+                print(f"Failed to add {symbol}, no price data.")
         return redirect("/")
 
-    # Prepare watchlist with price changes
     display_list = []
     for symbol, info in watchlist.items():
         current_price, timestamp, source = get_stock_price(symbol)
         if current_price:
             change = current_price - info["added_price"]
-            change_pct = (change / info["added_price"]) * 100
+            change_pct = (change / info["added_price"]) * 100 if info["added_price"] else 0
             display_list.append({
                 "symbol": symbol,
                 "added_price": info["added_price"],
                 "added_time": info["added_time"],
                 "current_price": current_price,
                 "change": round(change, 2),
-                "pct": round(change_pct, 2),
+                "change_pct": round(change_pct, 2),
                 "source": source,
                 "timestamp": timestamp
             })
         else:
-            # Show old data with None price if fresh fetch fails
+            # If unable to fetch current price, still display with dashes
             display_list.append({
                 "symbol": symbol,
                 "added_price": info["added_price"],
                 "added_time": info["added_time"],
                 "current_price": None,
                 "change": None,
-                "pct": None,
+                "change_pct": None,
                 "source": info.get("source"),
                 "timestamp": None
             })
@@ -97,7 +124,7 @@ def remove(symbol):
 
 @app.route("/refresh", methods=["POST"])
 def refresh():
-    # Just redirect to "/" GET, prices are fetched live on page load
+    # Just redirect to index to refresh prices
     return redirect("/")
 
 if __name__ == "__main__":
